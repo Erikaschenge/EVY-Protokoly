@@ -33,3 +33,4 @@ npx firebase-tools deploy
 
 ## Dôležité
 Firebase/GitHub je určený pre pilot. Firemná produkčná verzia má mať schválenú infraštruktúru, identitu, audit, zálohovanie a retention politiku.
+aktualizácia na v0.3
