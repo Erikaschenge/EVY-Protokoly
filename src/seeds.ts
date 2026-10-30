@@ -1,0 +1,7 @@
+import type{ProtocolTemplate}from'./domain';
+const date='2026-10-30';
+export const seedTemplates:ProtocolTemplate[]=[
+{id:'visual-hv5',code:'660.0-E.500.HV5',name:'Vizuálna kontrola vnútorného vybavenia HV5',vehicleSeries:'HV5',version:'1',status:'active',updatedAt:date,header:{subjectType:'single_vehicle',measuringMode:'hidden',templateEffectiveDate:date},fields:[{id:'h1',section:'Kabína',label:'Sedadlo strojvodcu',type:'ok_nok',required:true,allowNA:true,scope:'inspection',photoMode:'on_fail',minPhotos:1}]},
+{id:'visual-hv6',code:'660.0-E.500.HV6',name:'Vizuálna kontrola vnútorného vybavenia HV6',vehicleSeries:'HV6',version:'1',status:'active',updatedAt:date,header:{subjectType:'single_vehicle',measuringMode:'hidden',templateEffectiveDate:date},fields:[{id:'h6-1',section:'Kabína',label:'Sedadlo strojvodcu',type:'ok_nok',required:true,allowNA:true,scope:'inspection',photoMode:'on_fail',minPhotos:1}]},
+{id:'drive-unit',code:'660.J-P.000.98',name:'Skúšobná jazda jednotky',vehicleSeries:'UNIT',version:'1',status:'active',updatedAt:date,header:{subjectType:'vehicle_unit',measuringMode:'optional',templateEffectiveDate:date},fields:[{id:'d1',section:'Jazda',label:'Úsek trate',type:'text',required:true,scope:'inspection',photoMode:'optional'},{id:'d2',section:'Funkčné skúšky',label:'Brzdový systém',type:'ok_nok',required:true,scope:'all_vehicles',photoMode:'on_fail',minPhotos:1}]}
+];
