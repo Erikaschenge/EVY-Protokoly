@@ -1,0 +1,16 @@
+export type TemplateStatus='draft'|'active'|'archived';
+export type ProtocolStatus='not_started'|'in_progress'|'review'|'closed';
+export type SubjectType='single_vehicle'|'vehicle_unit';
+export type MeasuringMode='hidden'|'optional'|'required';
+export type FieldType='ok_nok'|'number'|'text'|'single_choice'|'ndt';
+export type FieldScope='inspection'|'all_vehicles'|'selected_vehicles';
+export type PhotoMode='optional'|'always'|'on_fail';
+export interface ReferenceImage{id:string;name:string;dataUrl:string;caption?:string}
+export interface FieldDef{id:string;section:string;label:string;type:FieldType;required?:boolean;allowNA?:boolean;unit?:string;options?:string[];defaultMethod?:string;quantity?:number;scope?:FieldScope;selectedVehicleRoles?:string[];photoMode?:PhotoMode;minPhotos?:number;referenceImages?:ReferenceImage[]}
+export interface HeaderDefinition{subjectType:SubjectType;measuringMode:MeasuringMode;templateEffectiveDate:string;subtitle?:string}
+export interface ProtocolTemplate{id:string;code:string;name:string;vehicleSeries:string;version:string;status:TemplateStatus;header:HeaderDefinition;fields:FieldDef[];sectionImages?:Record<string,ReferenceImage[]>;updatedAt:string}
+export interface Vehicle{id:string;roleCode:string;vehicleType:string;series:string;serialNumber:string;uic:string}
+export interface MeasuringDevice{id:string;name:string;inventoryNumber:string}
+export interface Answer{fieldId:string;vehicleRole?:string;value?:string|number;result?:'OK'|'NOK'|'NA';note?:string;photos?:string[];updatedAt:string}
+export interface ProtocolInstance{id:string;templateId:string;vehicleId?:string;status:ProtocolStatus;protocolNumber:string;reportNumber:string;protocolType:string;measuringDevices:MeasuringDevice[];answers:Answer[];createdAt:string;updatedAt:string}
+export interface Trainset{id:string;name:string;customer:string;orderNumber:string;orderTypes:string[];orderScopes:string[];ecmF2:string;series:string;status:'active'|'review'|'closed';vehicles:Vehicle[];protocols:ProtocolInstance[];createdAt:string;updatedAt:string}
