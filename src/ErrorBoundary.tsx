@@ -1,0 +1,2 @@
+import React from'react';
+export class ErrorBoundary extends React.Component<{children:React.ReactNode},{error?:Error}>{state:{error?:Error}={};static getDerivedStateFromError(error:Error){return{error}}render(){return this.state.error?<div className="fatal"><img src="./zos-trnava-logo.png"/><h1>Aplikáciu sa nepodarilo zobraziť</h1><p>{this.state.error.message}</p><button onClick={()=>location.assign(location.pathname+'#/')}>Späť na úvod</button></div>:this.props.children}}

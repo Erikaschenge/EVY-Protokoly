@@ -1,0 +1,2 @@
+import type{ReactNode}from'react';import{Link}from'react-router-dom';
+export function Shell({title,children}:{title:string,children:ReactNode}){return <><header><Link className="brand" to="/"><img src="./zos-trnava-logo.png"/><span>Digitálne protokoly</span></Link><nav><Link to="/">Súpravy</Link><Link to="/templates">Správa protokolov</Link></nav><b>v0.5 alpha 1</b></header><main><h1>{title}</h1>{children}</main></>}
