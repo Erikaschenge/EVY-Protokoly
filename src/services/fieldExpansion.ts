@@ -1,0 +1,3 @@
+import type{FieldDef,ProtocolTemplate,Vehicle}from'../models/domain';
+export interface RuntimeField extends FieldDef{runtimeId:string;vehicleRole?:string}
+export function expandFields(template:ProtocolTemplate,vehicles:Vehicle[]):RuntimeField[]{return template.fields.flatMap(field=>{if(template.header.subjectType!=='vehicle_unit'||field.scope!=='all_vehicles')return[{...field,runtimeId:field.id}];const roles=field.selectedVehicleRoles?.length?field.selectedVehicleRoles:vehicles.map(v=>v.roleCode);return roles.map(role=>({...field,runtimeId:`${field.id}::${role}`,vehicleRole:role,label:`${field.label} – ${role}`}))})}
