@@ -1,9 +1,62 @@
-import type{ProtocolPackage,Template,Trainset}from'./types';import{seedTemplates}from'./templates';
+import type{ProtocolPackage,Template,Trainset}from'./types';
+import{seedTemplates}from'./templates';
+
 const TK='evy_templates_v4',SK='evy_trainsets_v4',PK='evy_packages_v5';
+
 const parse=<T>(v:string|null,f:T):T=>{try{return v?JSON.parse(v):f}catch{return f}};
 const put=(k:string,v:unknown)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch{throw new Error('Úložisko prehliadača je plné. Odstráňte skúšobné fotografie alebo staré testovacie dáta.')}};
-export const uid=()=>crypto.randomUUID();
-export const templateRepo={async list(){const a=parse<Template[]>(localStorage.getItem(TK),[]);if(a.length)return a;put(TK,seedTemplates);return seedTemplates},async get(id:string){return(await this.list()).find(x=>x.id===id)},async save(x:Template){put(TK,[...(await this.list()).filter(y=>y.id!==x.id),x])},async remove(id:string){put(TK,(await this.list()).filter(x=>x.id!==id))},async duplicate(x:Template){const y={...x,id:uid(),code:x.code+'-COPY',name:x.name+' – kópia',status:'draft' as const,version:'1',updatedAt:new Date().toISOString(),fields:x.fields.map(f=>({...f,id:uid()}))};await this.save(y);return y}};
-export const trainsetRepo={async list(){return parse<Trainset[]>(localStorage.getItem(SK),[]).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))},async get(id:string){return(await this.list()).find(x=>x.id===id)},async save(x:Trainset){put(SK,[...(await this.list()).filter(y=>y.id!==x.id),x])},async remove(id:string){put(SK,(await this.list()).filter(x=>x.id!==id))}};
 
-export const packageRepo={async list(){return parse<ProtocolPackage[]>(localStorage.getItem(PK),[]).sort((a,b)=>a.name.localeCompare(b.name))},async get(id:string){return(await this.list()).find(x=>x.id===id)},async save(x:ProtocolPackage){put(PK,[...(await this.list()).filter(y=>y.id!==x.id),x])},async remove(id:string){put(PK,(await this.list()).filter(x=>x.id!==id))};
+export const uid=()=>crypto.randomUUID();
+
+export const templateRepo={
+  async list(){
+    const a=parse<Template[]>(localStorage.getItem(TK),[]);
+    if(a.length)return a;
+    put(TK,seedTemplates);
+    return seedTemplates;
+  },
+  async get(id:string){
+    return(await this.list()).find(x=>x.id===id);
+  },
+  async save(x:Template){
+    put(TK,[...(await this.list()).filter(y=>y.id!==x.id),x]);
+  },
+  async remove(id:string){
+    put(TK,(await this.list()).filter(x=>x.id!==id));
+  },
+  async duplicate(x:Template){
+    const y={...x,id:uid(),code:x.code+'-COPY',name:x.name+' – kópia',status:'draft' as const,version:'1',updatedAt:new Date().toISOString(),fields:x.fields.map(f=>({...f,id:uid()}))};
+    await this.save(y);
+    return y;
+  }
+};
+
+export const trainsetRepo={
+  async list(){
+    return parse<Trainset[]>(localStorage.getItem(SK),[]).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
+  },
+  async get(id:string){
+    return(await this.list()).find(x=>x.id===id);
+  },
+  async save(x:Trainset){
+    put(SK,[...(await this.list()).filter(y=>y.id!==x.id),x]);
+  },
+  async remove(id:string){
+    put(SK,(await this.list()).filter(x=>x.id!==id));
+  }
+};
+
+export const packageRepo={
+  async list(){
+    return parse<ProtocolPackage[]>(localStorage.getItem(PK),[]).sort((a,b)=>a.name.localeCompare(b.name));
+  },
+  async get(id:string){
+    return(await this.list()).find(x=>x.id===id);
+  },
+  async save(x:ProtocolPackage){
+    put(PK,[...(await this.list()).filter(y=>y.id!==x.id),x]);
+  },
+  async remove(id:string){
+    put(PK,(await this.list()).filter(x=>x.id!==id));
+  }
+};
