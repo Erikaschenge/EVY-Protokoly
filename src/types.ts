@@ -16,3 +16,7 @@ export type MeasuringDevice={id:string;name:string;inventoryNumber:string};
 export type Answer={fieldId:string;vehicleId?:string;value?:string|number|boolean;result?:'OK'|'NOK'|'NA';note?:string;photos?:string[];updatedAt:string};
 export type ProtocolInstance={id:string;templateId:string;subjectType:SubjectType;vehicleId?:string;status:ProtocolStatus;protocolNumber:string;reportNumber:string;protocolType:string;measuringDevices:MeasuringDevice[];answers:Answer[];createdAt:string;updatedAt:string};
 export type Trainset={id:string;name:string;customer:string;orderNumber:string;orderTypes:string[];orderScopes:string[];ecmF2:string;series:string;status:'active'|'review'|'closed';vehicles:VehicleIdentity[];protocols:ProtocolInstance[];createdAt:string;updatedAt:string};
+
+export type PackageTarget='HV5'|'VV5'|'VV6'|'HV6'|'UNIT';
+export type ProtocolPackageItem={id:string;templateId:string;target:PackageTarget;required:boolean;order:number};
+export type ProtocolPackage={id:string;code:string;name:string;series:string;status:'draft'|'active'|'archived';items:ProtocolPackageItem[];updatedAt:string};
