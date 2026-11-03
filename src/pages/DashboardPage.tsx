@@ -1,1 +1,0 @@
-import{useEffect,useState}from'react';import{useNavigate}from'react-router-dom';import type{Trainset}from'../models/domain';import{trainsetRepository}from'../repositories/trainsetRepository';import{Shell}from'../components/Shell';
