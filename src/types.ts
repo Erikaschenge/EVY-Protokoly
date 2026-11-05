@@ -20,3 +20,9 @@ export type Trainset={id:string;name:string;customer:string;orderNumber:string;o
 export type PackageTarget='HV5'|'VV5'|'VV6'|'HV6'|'UNIT';
 export type ProtocolPackageItem={id:string;templateId:string;target:PackageTarget;required:boolean;order:number};
 export type ProtocolPackage={id:string;code:string;name:string;series:string;status:'draft'|'active'|'archived';items:ProtocolPackageItem[];updatedAt:string};
+
+
+export type FindingPriority='critical'|'high'|'medium'|'low';
+export type FindingStatus='new'|'assigned'|'fixed'|'rejected'|'verified'|'closed';
+export type FindingHistoryEntry={id:string;action:FindingStatus|'created';note?:string;createdAt:string;user?:string};
+export type Finding={id:string;number:string;labelNumber:string;trainsetId:string;vehicleId?:string;location:string;category:string;description:string;priority:FindingPriority;status:FindingStatus;beforePhotos:string[];repairDescription:string;afterPhotos:string[];assignedTo?:string;createdAt:string;updatedAt:string;history:FindingHistoryEntry[]};

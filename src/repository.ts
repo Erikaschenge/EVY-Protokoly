@@ -1,7 +1,7 @@
-import type{ProtocolPackage,Template,Trainset}from'./types';
+import type{Finding,ProtocolPackage,Template,Trainset}from'./types';
 import{seedTemplates}from'./templates';
 
-const TK='evy_templates_v4',SK='evy_trainsets_v4',PK='evy_packages_v5';
+const TK='evy_templates_v4',SK='evy_trainsets_v4',PK='evy_packages_v5',FK='evy_findings_v5';
 
 const parse=<T>(v:string|null,f:T):T=>{try{return v?JSON.parse(v):f}catch{return f}};
 const put=(k:string,v:unknown)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch{throw new Error('Úložisko prehliadača je plné. Odstráňte skúšobné fotografie alebo staré testovacie dáta.')}};
@@ -59,4 +59,13 @@ export const packageRepo={
   async remove(id:string){
     put(PK,(await this.list()).filter(x=>x.id!==id));
   }
+};
+
+
+export const findingRepo={
+  async list(){return parse<Finding[]>(localStorage.getItem(FK),[]).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))},
+  async get(id:string){return(await this.list()).find(x=>x.id===id)},
+  async save(x:Finding){put(FK,[...(await this.list()).filter(y=>y.id!==x.id),x])},
+  async remove(id:string){put(FK,(await this.list()).filter(x=>x.id!==id))},
+  async nextNumber(){const year=String(new Date().getFullYear()).slice(-2),prefix=`TK-${year}-`,numbers=(await this.list()).filter(x=>x.number.startsWith(prefix)).map(x=>Number(x.number.slice(prefix.length))).filter(Number.isFinite);return`${prefix}${String((numbers.length?Math.max(...numbers):0)+1).padStart(4,'0')}`}
 };
