@@ -3,6 +3,7 @@ import{seedTemplates}from'./templates';
 import{db,fileStorage,ensureFirebaseReady}from'./firebase';
 import{collection,deleteDoc,doc,getDoc,getDocs,setDoc}from'firebase/firestore';
 import{getDownloadURL,ref,uploadBytes}from'firebase/storage';
+import{queueFindingPhotos}from'./services/uploadQueue';
 
 const TEMPLATE_COLLECTION='templates';
 const TRAINSET_COLLECTION='trainsets';
@@ -97,7 +98,16 @@ export const packageRepo={
 export const findingRepo={
   async list(){return(await listDocuments<Finding>(FINDING_COLLECTION)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))},
   async get(id:string){return getDocument<Finding>(FINDING_COLLECTION,id)},
-  async save(item:Finding){await saveDocument(FINDING_COLLECTION,item)},
+  async save(item:Finding){
+    await ensureFirebaseReady();
+    const current=await getDocument<Finding>(FINDING_COLLECTION,item.id);
+    const beforeNew=item.beforePhotos.filter(x=>x.startsWith('data:'));
+    const afterNew=item.afterPhotos.filter(x=>x.startsWith('data:'));
+    const unique=(values:string[])=>[...new Set(values.filter(x=>!x.startsWith('data:')))];
+    const prepared={...item,beforePhotos:unique([...(current?.beforePhotos||[]),...item.beforePhotos]),afterPhotos:unique([...(current?.afterPhotos||[]),...item.afterPhotos])};
+    await setDoc(doc(db!,FINDING_COLLECTION,item.id),prepared,{merge:false});
+    await Promise.all([queueFindingPhotos(item.id,'beforePhotos',beforeNew),queueFindingPhotos(item.id,'afterPhotos',afterNew)]);
+  },
   async remove(id:string){await removeDocument(FINDING_COLLECTION,id)},
   async nextNumber(){
     const year=String(new Date().getFullYear()).slice(-2),prefix=`TK-${year}-`;
