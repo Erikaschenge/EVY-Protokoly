@@ -1,7 +1,7 @@
 {
   "name": "evy-protokoly",
   "private": true,
-  "version": "0.6.0-alpha.1",
+  "version": "0.6.0-alpha.2.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,7 +15,8 @@
     "typescript": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "react-router-dom": "latest"
+    "react-router-dom": "latest",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/react": "latest",
