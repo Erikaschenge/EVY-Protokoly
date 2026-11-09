@@ -1,0 +1,25 @@
+import*as XLSX from'xlsx';
+import type{EvalRule,FieldDef,FieldScope,FieldType,MeasuringMode,PhotoMode,SubjectType,Template,TemplateStatus}from'../types';
+import{uid}from'../repository';
+type Row=Record<string,unknown>;
+const text=(v:unknown)=>String(v??'').trim();
+const num=(v:unknown)=>v===''||v==null?undefined:Number(v);
+const yes=(v:unknown)=>v===true||['áno','ano','true','1'].includes(text(v).toLowerCase());
+const mapValue=(v:unknown,map:Record<string,string>,fallback:string,label:string)=>{const raw=text(v)||fallback;const out=map[raw.toLowerCase()];if(!out)throw new Error(`${label}: nepovolená hodnota „${raw}“`);return out};
+const H={code:'Kód protokolu',name:'Názov protokolu',description:'Popis',version:'Verzia',status:'Stav šablóny',series:'Rad vozidla',subject:'Predmet protokolu',measuring:'Meradlá',effective:'Platnosť od',subtitle:'Podnadpis',section:'Sekcia',order:'Poradie',label:'Kontrolný bod',help:'Pomocný text',type:'Typ poľa',required:'Povinné',allowNA:'Povoliť N/A',unit:'Jednotka',options:'Možnosti',rule:'Pravidlo vyhodnotenia',min:'Minimum',max:'Maximum',target:'Cieľová hodnota',minus:'Mínusová tolerancia',plus:'Plusová tolerancia',photo:'Režim fotografie',minPhotos:'Minimálny počet fotografií',scope:'Rozsah kontroly',vehicles:'Cieľové vozidlá',quantity:'Množstvo',method:'Predvolená metóda'}as const;
+const typeMap={'ok/nok':'ok_nok','číslo':'number','cislo':'number','text':'text','jedna možnosť':'single_choice','jedna moznost':'single_choice','dátum':'date','datum':'date','čas':'time','cas':'time','dátum a čas':'datetime','datum a cas':'datetime','ndt':'ndt'};
+const statusMap={'návrh':'draft','navrh':'draft','aktívna':'active','aktivna':'active','archivovaná':'archived','archivovana':'archived'};
+const subjectMap={'jedno vozidlo':'single_vehicle','celá jednotka':'vehicle_unit','cela jednotka':'vehicle_unit'};
+const measuringMap={'skryté':'hidden','skryte':'hidden','voliteľné':'optional','volitelne':'optional','povinné':'required','povinne':'required'};
+const ruleMap={'bez pravidla':'none','rozsah':'range','minimum':'min','maximum':'max','tolerancia':'tolerance'};
+const photoMap={'voliteľná':'optional','volitelna':'optional','vždy':'always','vzdy':'always','pri nevyhovujúcom výsledku':'on_fail','pri nevyhovujucom vysledku':'on_fail'};
+const scopeMap={'kontrola':'inspection','všetky vozidlá':'all_vehicles','vsetky vozidla':'all_vehicles','vybrané vozidlá':'selected_vehicles','vybrane vozidla':'selected_vehicles'};
+export async function importProtocolWorkbook(file:File):Promise<Template>{
+ const book=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});const sheet=book.Sheets['Polia'];if(!sheet)throw new Error('Súbor neobsahuje hárok „Polia“.');
+ const rows=XLSX.utils.sheet_to_json<Row>(sheet,{defval:''}).filter(r=>text(r[H.code])||text(r[H.label]));if(!rows.length)throw new Error('Hárok „Polia“ neobsahuje žiadne kontrolné body.');
+ const first=rows[0];for(const col of [H.code,H.name,H.section,H.label,H.type])if(!text(first[col]))throw new Error(`Chýba povinná hodnota v stĺpci „${col}“.`);
+ const code=text(first[H.code]);for(const [i,row]of rows.entries())if(text(row[H.code])!==code)throw new Error(`Riadok ${i+2}: jeden súbor môže obsahovať iba jeden kód protokolu.`);
+ const fields:FieldDef[]=rows.sort((a,b)=>(num(a[H.order])??9999)-(num(b[H.order])??9999)).map((r,i)=>{for(const col of [H.section,H.label,H.type])if(!text(r[col]))throw new Error(`Riadok ${i+2}: chýba „${col}“.`);const kind=mapValue(r[H.rule],ruleMap,'Bez pravidla',H.rule)as EvalRule['kind'];return{id:uid(),section:text(r[H.section]),label:text(r[H.label]),help:text(r[H.help])||undefined,type:mapValue(r[H.type],typeMap,'Text',H.type)as FieldType,required:yes(r[H.required]),allowNA:yes(r[H.allowNA]),unit:text(r[H.unit])||undefined,options:text(r[H.options])?text(r[H.options]).split('|').map(x=>x.trim()).filter(Boolean):undefined,rule:{kind,min:num(r[H.min]),max:num(r[H.max]),target:num(r[H.target]),minus:num(r[H.minus]),plus:num(r[H.plus])},photoMode:mapValue(r[H.photo],photoMap,'Voliteľná',H.photo)as PhotoMode,minPhotos:num(r[H.minPhotos]),scope:mapValue(r[H.scope],scopeMap,'Kontrola',H.scope)as FieldScope,vehicleSlotIds:text(r[H.vehicles])?text(r[H.vehicles]).split('|').map(x=>x.trim()).filter(Boolean):undefined,quantity:num(r[H.quantity]),defaultMethod:text(r[H.method])||undefined}});
+ const date=first[H.effective]instanceof Date?first[H.effective].toISOString().slice(0,10):text(first[H.effective])||new Date().toISOString().slice(0,10);
+ return{id:uid(),code,name:text(first[H.name]),description:text(first[H.description]),version:text(first[H.version])||'1.0',status:mapValue(first[H.status],statusMap,'Návrh',H.status)as TemplateStatus,vehicleSeries:text(first[H.series])||'ALL',header:{subjectType:mapValue(first[H.subject],subjectMap,'Jedno vozidlo',H.subject)as SubjectType,measuringMode:mapValue(first[H.measuring],measuringMap,'Voliteľné',H.measuring)as MeasuringMode,vehicleSlots:[],templateEffectiveDate:date,subtitle:text(first[H.subtitle])||undefined},fields,sectionImages:{},updatedAt:new Date().toISOString()};
+}
