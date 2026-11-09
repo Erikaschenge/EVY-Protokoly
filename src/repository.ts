@@ -2,8 +2,8 @@ import type{Finding,ProtocolPackage,Template,Trainset}from'./types';
 import{seedTemplates}from'./templates';
 import{db,fileStorage,ensureFirebaseReady}from'./firebase';
 import{collection,deleteDoc,doc,getDoc,getDocs,setDoc}from'firebase/firestore';
-import{getDownloadURL,ref,uploadBytes}from'firebase/storage';
-import{queueFindingPhotos}from'./services/uploadQueue';
+import{deleteObject,getDownloadURL,listAll,ref,uploadBytes}from'firebase/storage';
+import{queueFindingPhotos,removeQueuedPhotos}from'./services/uploadQueue';
 
 const TEMPLATE_COLLECTION='templates';
 const TRAINSET_COLLECTION='trainsets';
@@ -108,7 +108,12 @@ export const findingRepo={
     await setDoc(doc(db!,FINDING_COLLECTION,item.id),prepared,{merge:false});
     await Promise.all([queueFindingPhotos(item.id,'beforePhotos',beforeNew),queueFindingPhotos(item.id,'afterPhotos',afterNew)]);
   },
-  async remove(id:string){await removeDocument(FINDING_COLLECTION,id)},
+  async remove(id:string){
+    await removeQueuedPhotos(id);
+    await ensureFirebaseReady();
+    if(fileStorage){const folder=await listAll(ref(fileStorage,`findings/${id}`));await Promise.all(folder.items.map(item=>deleteObject(item).catch(()=>undefined)))}
+    await removeDocument(FINDING_COLLECTION,id);
+  },
   async nextNumber(){
     const year=String(new Date().getFullYear()).slice(-2),prefix=`TK-${year}-`;
     const numbers=(await this.list()).filter(item=>item.number.startsWith(prefix)).map(item=>Number(item.number.slice(prefix.length))).filter(Number.isFinite);
