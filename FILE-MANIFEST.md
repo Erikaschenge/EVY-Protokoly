@@ -1,13 +1,16 @@
-# Zoznam súborov Alpha 3.2
+# Zoznam súborov Alpha 3.3
 
 ## Zmenené súbory
 - package.json
 - src/App.tsx
+- src/services/protocolImport.ts
 - src/styles.css
-- CHANGELOG.md
+- src/types.ts
 
 ## Nové súbory
-- README-v0.6-protokoly-alpha3.2.txt
+- CHANGELOG.md
+- FILE-MANIFEST.md
+- README-v0.6-protokoly-alpha3.3.txt
 
 ## Odstránené súbory
 - Žiadne
@@ -27,7 +30,6 @@
 - README-v0.6-protokoly-alpha2.1.txt
 - README-v0.6-protokoly-alpha2.txt
 - README-v0.6-protokoly-alpha3.0.txt
-- README-v0.6-protokoly-alpha3.1.txt
 - README.md
 - env.example
 - firebase.json
@@ -45,11 +47,9 @@
 - src/repositories/storage.ts
 - src/repository.ts
 - src/services/findingNumber.ts
-- src/services/protocolImport.ts
 - src/services/uploadQueue.ts
 - src/styles/README.md
 - src/templates.ts
-- src/types.ts
 - storage.rules
 - tsconfig.json
 - vite.config.ts
