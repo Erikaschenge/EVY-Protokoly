@@ -36,7 +36,15 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: npm install
+        # Po prvom commite package-lock.json sa použije reprodukovateľná inštalácia (npm ci).
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
 
       - name: Verify Firebase configuration
         run: |
