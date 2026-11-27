@@ -1,11 +1,20 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Pilot: prístup má každý prihlásený (anonymný) používateľ. Pred produkciou nahradiť rolami.
     function signedIn() { return request.auth != null; }
+
     match /templates/{id} { allow read, write: if signedIn(); }
-    match /trainsets/{id} { allow read, write: if signedIn(); }
+    match /trainsets/{id} {
+      allow read, write: if signedIn();
+      match /protocols/{protocolId} { allow read, write: if signedIn(); }
+    }
     match /protocolPackages/{id} { allow read, write: if signedIn(); }
     match /findings/{id} { allow read, write: if signedIn(); }
+    // Počítadlá čísel chýb (TK-RR-NNNN)
+    match /counters/{id} { allow read, write: if signedIn(); }
+    // Systémové značky (napr. ukážkové šablóny už boli vložené)
+    match /system/{id} { allow read, write: if signedIn(); }
     match /{document=**} { allow read, write: if false; }
   }
 }

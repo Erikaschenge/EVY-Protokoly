@@ -1,36 +1,60 @@
 # Digitálne protokoly ŽKV – pilot
 
-Konfigurovateľný pilot pre rôzne kontrolné, meracie, výrobné a skúšobné protokoly železničných vozidiel.
+Pilotná webová aplikácia pre kontrolné, meracie, výrobné a skúšobné protokoly železničných vozidiel
+a pre evidenciu chýb vozňov. Beží na GitHub Pages, údaje ukladá do Firebase (Firestore + Storage).
 
-## Čo obsahuje v0.1
-- domovskú obrazovku,
-- novú a rozpracovanú kontrolu,
-- priebežné lokálne ukladanie,
-- 4 rozdielne pilotné šablóny,
-- OK/NOK/N/A, text, dátum/čas, výber, NDT výsledok,
-- numerické rozsahy a tolerancie s automatickým vyhodnotením,
-- opakovateľné polia,
-- fotografovanie nezhôd,
-- históriu.
+> **Pilot bez citlivých dát.** Prihlásenie je anonymné a každý prihlásený používateľ má prístup ku
+> všetkým údajom. Pred produkčným nasadením je potrebné firemné prihlásenie a pravidlá podľa rolí.
 
-## Spustenie
+## Funkcie
+- súpravy/zákazky s vozidlami a balíkmi protokolov,
+- vyplňovanie protokolov: OK/NOK/N/A, merania s automatickým vyhodnotením (rozsah, tolerancia, hranice),
+  text, výber, dátum/čas, stav 0/1, defektoskopia (NDT) po kusoch, opakované body,
+- fotografie (zmenšené v zariadení, nahrávané cez offline frontu),
+- priebežné ukladanie s indikátorom stavu a offline režimom,
+- uzatvorenie protokolu so zámkom, opätovné otvorenie s dôvodom a históriou,
+- každý protokol má kópiu šablóny z času vytvorenia (neskoršie úpravy šablóny ho nemenia),
+- tlačový výstup s nameranými hodnotami, meradlami, podpismi a fotodokumentáciou,
+- import šablóny z Excelu (predloha `public/EVY-Predloha-importu-protokolu.xlsx`),
+- evidencia chýb s číslovaním TK-RR-NNNN, workflow opravy a overenia a históriou.
+
+## Vývoj
 ```bash
-npm install
+npm install          # prvýkrát – vytvorí package-lock.json, ten commitnite
 npm run dev
+npm run typecheck
+npm test
+npm run build
 ```
+Kód formátujte cez `npm run format` (Prettier).
 
-Aplikácia bez `.env` funguje v **lokálnom pilotnom režime** cez `localStorage`. Firebase konfigurácia je pripravená, produkčný repozitár Firestore/Storage sa doplní v ďalšom kroku.
+Štruktúra `src/`:
+- `pages/` – obrazovky, `components/` – spoločné prvky (Shell, Field, fotografie),
+- `lib/` – čistá logika bez Firebase (vyhodnocovanie, validácia, import) + testy,
+- `repository.ts` – všetky zápisy a čítania z Firebase, `services/` – fronta fotografií a import Excelu.
 
 ## Firebase
-1. Skopírujte `.env.example` na `.env` a doplňte Firebase Web App config.
-2. Skopírujte `.firebaserc.example` na `.firebaserc` a doplňte project ID.
-3. Zapnite Authentication, Firestore, Storage a Hosting.
-4. Nasaďte pravidlá a hosting:
-```bash
-npm run build
-npx firebase-tools deploy
-```
+1. Firebase Console: vytvorte projekt, povoľte **Authentication → Anonymous**, vytvorte Firestore
+   (Standard, európsky región) a Storage.
+2. Hodnoty z *Project settings → Your apps → Web app* vložte do GitHub Actions secrets
+   (`VITE_FIREBASE_*`) alebo do lokálneho `.env` podľa `.env.example`.
+3. **Nasaďte pravidlá** (nutné pri každej zmene `firestore.rules` / `storage.rules`):
+   ```bash
+   cp .firebaserc.example .firebaserc   # doplňte project ID
+   npx firebase-tools deploy --only firestore:rules,storage
+   ```
+4. Push do vetvy `main` spustí typovú kontrolu, testy, build a nasadenie na GitHub Pages.
 
-## Dôležité
-Firebase/GitHub je určený pre pilot. Firemná produkčná verzia má mať schválenú infraštruktúru, identitu, audit, zálohovanie a retention politiku.
-aktualizácia na v0.3
+## Model údajov (Firestore)
+| Kolekcia | Obsah |
+|---|---|
+| `templates/{id}` | šablóny protokolov |
+| `protocolPackages/{id}` | balíky (záložky) protokolov |
+| `trainsets/{id}` | súprava, vozidlá a `protocolIndex` – ľahký prehľad protokolov |
+| `trainsets/{id}/protocols/{pid}` | protokol: odpovede, meradlá, história, kópia šablóny |
+| `findings/{id}` | evidované chyby |
+| `counters/findings-RR` | počítadlo čísel chýb pre rok RR |
+| `system/seed` | značka, že ukážkové šablóny už boli vložené |
+
+Súpravy zo staršej verzie (protokoly vnútri dokumentu súpravy) sa pri prvom otvorení automaticky
+prevedú do podkolekcie `protocols`.
