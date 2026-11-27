@@ -1,63 +1,444 @@
-import{useEffect,useState}from'react';
-import{useNavigate,useParams}from'react-router-dom';
-import type{Finding,FindingPriority,FindingStatus,Trainset}from'../types';
-import{findingRepo,trainsetRepo,uid}from'../repository';
-import{Shell}from'../App';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { PhotoButton, PhotoStrip, useQueuedPhotos } from '../components/Photos';
+import { Shell } from '../components/Shell';
+import { DebouncedText, ErrorBox, Lightbox, Notice, NotFound } from '../components/ui';
+import { errorMessage } from '../lib/errors';
+import { useAction, useAsync } from '../lib/hooks';
+import { requireWorker } from '../lib/worker';
+import { findingRepo, trainsetRepo } from '../repository';
+import type { Finding, FindingPriority, FindingStatus } from '../types';
 
-const now=()=>new Date().toISOString();
-const statusLabel:Record<FindingStatus,string>={new:'Nové',assigned:'Pridelené',fixed:'Odstránené pracovníkom',rejected:'Vrátené na opravu',verified:'Overené kontrolórom',closed:'Uzatvorené'};
-const priorityLabel:Record<FindingPriority,string>={critical:'Kritická',high:'Vysoká',medium:'Stredná',low:'Nízka'};
-const categories=['Interiér','Exteriér','Podvozok','Brzdy','Elektrická výzbroj','Klimatizácia','Dvere','WC','Stanovište','Dokumentácia','Iné'];
+const statusLabel: Record<FindingStatus, string> = {
+  new: 'Nové',
+  assigned: 'Pridelené',
+  fixed: 'Odstránené pracovníkom',
+  rejected: 'Vrátené na opravu',
+  verified: 'Overené kontrolórom',
+  closed: 'Uzatvorené',
+};
+const priorityLabel: Record<FindingPriority, string> = { critical: 'Kritická', high: 'Vysoká', medium: 'Stredná', low: 'Nízka' };
+const categories = ['Interiér', 'Exteriér', 'Podvozok', 'Brzdy', 'Elektrická výzbroj', 'Klimatizácia', 'Dvere', 'WC', 'Stanovište', 'Dokumentácia', 'Iné'];
+const isDone = (s: FindingStatus) => s === 'verified' || s === 'closed';
 
-async function compressImage(file:File):Promise<string>{
-  const source=await new Promise<string>((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result));r.onerror=no;r.readAsDataURL(file)});
-  const image=await new Promise<HTMLImageElement>((ok,no)=>{const img=new Image();img.onload=()=>ok(img);img.onerror=no;img.src=source});
-  const max=1600,scale=Math.min(1,max/Math.max(image.width,image.height));
-  const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.width*scale));canvas.height=Math.max(1,Math.round(image.height*scale));
-  canvas.getContext('2d')!.drawImage(image,0,0,canvas.width,canvas.height);
-  return canvas.toDataURL('image/jpeg',.76);
+export function FindingsPage() {
+  const n = useNavigate();
+  const data = useAsync(() => Promise.all([findingRepo.list(), trainsetRepo.list()]), []);
+  const [q, setQ] = useState('');
+  const [status, setStatus] = useState('all');
+  const [priority, setPriority] = useState('all');
+  const items = data.data?.[0] || [];
+  const sets = data.data?.[1] || [];
+  const filtered = items.filter((x) => {
+    const set = sets.find((s) => s.id === x.trainsetId);
+    const vehicle = set?.vehicles.find((v) => v.id === x.vehicleId);
+    const hay = [x.number, x.labelNumber, x.location, x.category, x.description, set?.name, set?.orderNumber, vehicle?.roleCode].join(' ').toLowerCase();
+    return hay.includes(q.toLowerCase()) && (status === 'all' || x.status === status) && (priority === 'all' || x.priority === priority);
+  });
+  const open = items.filter((x) => !isDone(x.status)).length;
+  return (
+    <Shell title="Evidencia chýb vozňov">
+      <section className="findingSummary">
+        <div>
+          <b>{open}</b>
+          <span>otvorených</span>
+        </div>
+        <div>
+          <b>{items.filter((x) => x.status === 'fixed').length}</b>
+          <span>čaká na overenie</span>
+        </div>
+        <div>
+          <b>{items.filter((x) => x.priority === 'critical' && !isDone(x.status)).length}</b>
+          <span>kritických</span>
+        </div>
+        <button type="button" onClick={() => n('/findings/new')}>
+          + Nová chyba
+        </button>
+      </section>
+      <div className="findingFilters">
+        <input aria-label="Hľadať" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Číslo chyby, nálepka, súprava, vozidlo, miesto…" />
+        <select aria-label="Stav" value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option value="all">Všetky stavy</option>
+          {Object.entries(statusLabel).map(([k, v]) => (
+            <option key={k} value={k}>
+              {v}
+            </option>
+          ))}
+        </select>
+        <select aria-label="Závažnosť" value={priority} onChange={(e) => setPriority(e.target.value)}>
+          <option value="all">Všetky priority</option>
+          {Object.entries(priorityLabel).map(([k, v]) => (
+            <option key={k} value={k}>
+              {v}
+            </option>
+          ))}
+        </select>
+      </div>
+      <ErrorBox message={data.error} />
+      {data.loading && !items.length && <Notice>Načítavam evidované chyby…</Notice>}
+      <div className="findingList">
+        {filtered.map((x) => {
+          const set = sets.find((s) => s.id === x.trainsetId);
+          const vehicle = set?.vehicles.find((v) => v.id === x.vehicleId);
+          return (
+            <button type="button" className="findingCard" key={x.id} onClick={() => n(`/findings/${x.id}`)}>
+              <div className="findingIdentity">
+                <strong>{x.number}</strong>
+                {x.labelNumber && <span>Nálepka: {x.labelNumber}</span>}
+                <small>
+                  {set?.name || 'Neznáma súprava'} • {vehicle?.roleCode || 'Celá jednotka'} • {x.location}
+                </small>
+              </div>
+              <div>
+                <span className={`priority ${x.priority}`}>{priorityLabel[x.priority]}</span>
+                <span className={`findingStatus ${x.status}`}>{statusLabel[x.status]}</span>
+              </div>
+            </button>
+          );
+        })}
+        {!data.loading && !filtered.length && <div className="empty">Nenašli sa žiadne evidované chyby.</div>}
+      </div>
+    </Shell>
+  );
 }
-const toDataUrls=async(files:FileList|null)=>files?Promise.all([...files].map(compressImage)):[];
 
-export function FindingsPage(){
-  const n=useNavigate(),[items,setItems]=useState<Finding[]>([]),[sets,setSets]=useState<Trainset[]>([]),[q,setQ]=useState(''),[status,setStatus]=useState('all'),[priority,setPriority]=useState('all');
-  useEffect(()=>{Promise.all([findingRepo.list(),trainsetRepo.list()]).then(([f,s])=>{setItems(f);setSets(s)})},[]);
-  const filtered=items.filter(x=>{const set=sets.find(s=>s.id===x.trainsetId),vehicle=set?.vehicles.find(v=>v.id===x.vehicleId),hay=[x.number,x.labelNumber,x.location,x.category,x.description,set?.name,set?.orderNumber,vehicle?.roleCode].join(' ').toLowerCase();return hay.includes(q.toLowerCase())&&(status==='all'||x.status===status)&&(priority==='all'||x.priority===priority)});
-  const open=items.filter(x=>!['verified','closed'].includes(x.status)).length;
-  return <Shell title="Evidencia chýb vozňov"><section className="findingSummary"><div><b>{open}</b><span>otvorených</span></div><div><b>{items.filter(x=>x.status==='fixed').length}</b><span>čaká na overenie</span></div><div><b>{items.filter(x=>x.priority==='critical'&&!['verified','closed'].includes(x.status)).length}</b><span>kritických</span></div><button type="button" onClick={()=>n('/findings/new')}>+ Nová chyba</button></section><div className="findingFilters"><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Číslo chyby, nálepka, súprava, vozidlo, miesto…"/><select value={status} onChange={e=>setStatus(e.target.value)}><option value="all">Všetky stavy</option>{Object.entries(statusLabel).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select><select value={priority} onChange={e=>setPriority(e.target.value)}><option value="all">Všetky priority</option>{Object.entries(priorityLabel).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div><div className="findingList">{filtered.map(x=>{const set=sets.find(s=>s.id===x.trainsetId),vehicle=set?.vehicles.find(v=>v.id===x.vehicleId);return <button type="button" className="findingCard" key={x.id} onClick={()=>n('/findings/'+x.id)}><div className="findingIdentity"><strong>{x.number}</strong>{x.labelNumber&&<span>Nálepka: {x.labelNumber}</span>}<small>{set?.name||'Neznáma súprava'} • {vehicle?.roleCode||'Celá jednotka'} • {x.location}</small></div><div><span className={'priority '+x.priority}>{priorityLabel[x.priority]}</span><span className={'findingStatus '+x.status}>{statusLabel[x.status]}</span></div></button>})}{!filtered.length&&<div className="empty">Nenašli sa žiadne evidované chyby.</div>}</div></Shell>
+export function FindingEditorPage() {
+  const n = useNavigate();
+  const setsData = useAsync(() => trainsetRepo.list(), []);
+  const sets = setsData.data || [];
+  const [trainsetId, setTrainsetId] = useState<string>();
+  const [vehicleId, setVehicleId] = useState('');
+  const [labelNumber, setLabelNumber] = useState('');
+  const [location, setLocation] = useState('');
+  const [category, setCategory] = useState(categories[0]);
+  const [description, setDescription] = useState('');
+  const [priority, setPriority] = useState<FindingPriority>('medium');
+  const [photos, setPhotos] = useState<Blob[]>([]);
+  const [light, setLight] = useState<string>();
+  const action = useAction();
+  const selectedSetId = trainsetId ?? sets[0]?.id ?? '';
+  const trainset = sets.find((x) => x.id === selectedSetId);
+  const previews = useMemo(() => photos.map((b) => URL.createObjectURL(b)), [photos]);
+  useEffect(() => () => previews.forEach((u) => URL.revokeObjectURL(u)), [previews]);
+
+  const save = () =>
+    action.run(async () => {
+      if (!selectedSetId) throw new Error('Najprv vytvorte alebo vyberte súpravu.');
+      if (!location.trim()) throw new Error('Vyplňte miesto chyby.');
+      if (!description.trim()) throw new Error('Vyplňte stručný popis chyby.');
+      const user = requireWorker();
+      const id = await findingRepo.create(
+        {
+          labelNumber: labelNumber.trim(),
+          trainsetId: selectedSetId,
+          vehicleId: vehicleId || undefined,
+          location: location.trim(),
+          category,
+          description: description.trim(),
+          priority,
+        },
+        photos,
+        user,
+      );
+      n(`/findings/${id}`, { replace: true });
+    });
+
+  return (
+    <Shell title="Nová evidovaná chyba">
+      <ErrorBox message={action.error || setsData.error} onClose={() => action.setError('')} />
+      {!setsData.loading && !sets.length && <Notice>Nie je vytvorená žiadna súprava. Pred evidovaním chyby najprv vytvorte súpravu.</Notice>}
+      <div className="form grid2">
+        <label>
+          Číslo chyby
+          <input value="Pridelí sa pri uložení" readOnly disabled />
+        </label>
+        <label>
+          Číslo fyzickej nálepky
+          <input value={labelNumber} onChange={(e) => setLabelNumber(e.target.value)} placeholder="napr. TK-0047 alebo 0047" />
+        </label>
+        <label>
+          Súprava
+          <select
+            value={selectedSetId}
+            onChange={(e) => {
+              setTrainsetId(e.target.value);
+              setVehicleId('');
+            }}
+          >
+            <option value="">Vyberte</option>
+            {sets.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name} • {x.orderNumber}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Vozidlo
+          <select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)}>
+            <option value="">Celá jednotka</option>
+            {trainset?.vehicles.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.roleCode} • {v.serialNumber}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Miesto *
+          <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="napr. oddiel cestujúcich, sedadlo 12" />
+        </label>
+        <label>
+          Kategória
+          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+            {categories.map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Závažnosť
+          <select value={priority} onChange={(e) => setPriority(e.target.value as FindingPriority)}>
+            {Object.entries(priorityLabel).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="wide">
+          Stručný popis *
+          <textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Čo bolo zistené a kde presne sa chyba nachádza" />
+        </label>
+      </div>
+      <section className="photoSection">
+        <h2>Fotografie pred opravou</h2>
+        <PhotoButton label="Pridať fotografie" onPhotos={(b) => setPhotos((p) => [...p, ...b])} onError={(m) => action.setError(m)} />
+        <div className="findingPhotos">
+          {previews.map((url, i) => (
+            <figure key={url}>
+              <img src={url} alt={`Fotografia ${i + 1}`} onClick={() => setLight(url)} />
+              <button type="button" className="danger" onClick={() => setPhotos(photos.filter((_, j) => j !== i))}>
+                Odstrániť
+              </button>
+            </figure>
+          ))}
+        </div>
+      </section>
+      <div className="sticky">
+        <button type="button" className="secondary" onClick={() => n('/findings')}>
+          Zrušiť
+        </button>
+        <button type="button" onClick={save} disabled={action.busy || !sets.length}>
+          {action.busy ? 'Ukladám…' : 'Uložiť chybu'}
+        </button>
+      </div>
+      {light && <Lightbox src={light} close={() => setLight(undefined)} />}
+    </Shell>
+  );
 }
 
-export function FindingEditorPage(){
-  const n=useNavigate(),[sets,setSets]=useState<Trainset[]>([]),[number,setNumber]=useState(''),[trainsetId,setTrainsetId]=useState(''),[vehicleId,setVehicleId]=useState(''),[labelNumber,setLabelNumber]=useState(''),[location,setLocation]=useState(''),[category,setCategory]=useState(categories[0]),[description,setDescription]=useState(''),[priority,setPriority]=useState<FindingPriority>('medium'),[photos,setPhotos]=useState<string[]>([]),[error,setError]=useState(''),[saving,setSaving]=useState(false);
-  useEffect(()=>{Promise.all([trainsetRepo.list(),findingRepo.nextNumber()]).then(([s,no])=>{setSets(s);setNumber(no);setTrainsetId(s[0]?.id||'')}).catch(e=>setError(e instanceof Error?e.message:'Údaje sa nepodarilo načítať.'))},[]);
-  const trainset=sets.find(x=>x.id===trainsetId);
-  async function addPhotos(files:FileList|null){try{setError('');const added=await toDataUrls(files);setPhotos(p=>[...p,...added])}catch{setError('Fotografiu sa nepodarilo spracovať. Skúste inú fotografiu.')}}
-  async function save(){
-    if(saving)return;
-    setError('');
-    if(!trainsetId)return setError('Najprv vytvorte alebo vyberte súpravu.');
-    if(!location.trim())return setError('Vyplňte miesto chyby.');
-    if(!description.trim())return setError('Vyplňte stručný popis chyby.');
-    setSaving(true);
-    try{
-      const finalNumber=number||await findingRepo.nextNumber();
-      const finding:Finding={id:uid(),number:finalNumber,labelNumber:labelNumber.trim(),trainsetId,vehicleId:vehicleId||undefined,location:location.trim(),category,description:description.trim(),priority,status:'new',beforePhotos:photos,repairDescription:'',afterPhotos:[],createdAt:now(),updatedAt:now(),history:[{id:uid(),action:'created',note:'Chyba zaevidovaná',createdAt:now()}]};
-      await findingRepo.save(finding);
-      const saved=await findingRepo.get(finding.id);
-      if(!saved)throw new Error('Chyba sa po zápise nenašla v úložisku.');
-      n('/findings/'+finding.id,{replace:true});
-    }catch(e){setError(e instanceof Error?e.message:'Chybu sa nepodarilo uložiť.');setSaving(false)}
-  }
-  return <Shell title="Nová evidovaná chyba">{error&&<div className="error">{error}</div>}{!sets.length&&<div className="notice">Nie je vytvorená žiadna súprava. Pred evidovaním chyby najprv vytvorte súpravu.</div>}<div className="form grid2"><label>Číslo chyby<input value={number} readOnly/></label><label>Číslo fyzickej nálepky<input value={labelNumber} onChange={e=>setLabelNumber(e.target.value)} placeholder="napr. TK-0047 alebo 0047"/></label><label>Súprava<select value={trainsetId} onChange={e=>{setTrainsetId(e.target.value);setVehicleId('')}}><option value="">Vyberte</option>{sets.map(x=><option key={x.id} value={x.id}>{x.name} • {x.orderNumber}</option>)}</select></label><label>Vozidlo<select value={vehicleId} onChange={e=>setVehicleId(e.target.value)}><option value="">Celá jednotka</option>{trainset?.vehicles.map(v=><option key={v.id} value={v.id}>{v.roleCode} • {v.serialNumber}</option>)}</select></label><label>Miesto<input value={location} onChange={e=>setLocation(e.target.value)} placeholder="napr. oddiel cestujúcich, sedadlo 12"/></label><label>Kategória<select value={category} onChange={e=>setCategory(e.target.value)}>{categories.map(x=><option key={x}>{x}</option>)}</select></label><label>Závažnosť<select value={priority} onChange={e=>setPriority(e.target.value as FindingPriority)}>{Object.entries(priorityLabel).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label><label className="wide">Stručný popis<textarea rows={4} value={description} onChange={e=>setDescription(e.target.value)} placeholder="Čo bolo zistené a kde presne sa chyba nachádza"/></label></div><section className="photoSection"><h2>Fotografie pred opravou</h2><label className="upload">Pridať fotografie<input hidden type="file" accept="image/*" capture="environment" multiple onChange={e=>addPhotos(e.target.files)}/></label><div className="findingPhotos">{photos.map((x,i)=><figure key={i}><img src={x}/><button type="button" className="danger" onClick={()=>setPhotos(photos.filter((_,j)=>j!==i))}>Odstrániť</button></figure>)}</div></section><div className="sticky"><button type="button" className="secondary" onClick={()=>n('/findings')}>Zrušiť</button><button type="button" onClick={save} disabled={saving||!sets.length}>{saving?'Ukladám…':'Uložiť chybu'}</button></div></Shell>
-}
+export function FindingDetailPage() {
+  const { id = '' } = useParams();
+  const n = useNavigate();
+  const [state, setState] = useState<{ loading: boolean; item?: Finding | null; error?: string }>({ loading: true });
+  const sets = useAsync(() => trainsetRepo.list(), []);
+  const [note, setNote] = useState('');
+  const [light, setLight] = useState<string>();
+  const action = useAction();
+  // Posledný zadaný popis opravy – pole sa ukladá pri opustení, tlačidlo ho musí vidieť hneď.
+  const repairRef = useRef<string | null>(null);
+  const queued = useQueuedPhotos(state.item ? `findings/${id}` : undefined, (field) => field[0]);
+  useEffect(
+    () =>
+      findingRepo.subscribe(
+        id,
+        (item) => setState({ loading: false, item }),
+        (e) => setState({ loading: false, error: errorMessage(e) }),
+      ),
+    [id],
+  );
 
-export function FindingDetailPage(){
-  const{id}=useParams(),n=useNavigate(),[item,setItem]=useState<Finding>(),[sets,setSets]=useState<Trainset[]>([]),[repair,setRepair]=useState(''),[after,setAfter]=useState<string[]>([]),[note,setNote]=useState(''),[error,setError]=useState(''),[saving,setSaving]=useState(false);
-  useEffect(()=>{Promise.all([findingRepo.get(id!),trainsetRepo.list()]).then(([f,s])=>{setItem(f);setSets(s);setRepair(f?.repairDescription||'');setAfter(f?.afterPhotos||[])}).catch(e=>setError(e instanceof Error?e.message:'Evidenčný list chyby sa nepodarilo načítať.'))},[id]);
-  if(!item)return <Shell title="Načítavam">{error?<div className="error">{error}</div>:<div className="notice">Načítavam evidenčný list chyby…</div>}</Shell>;
-  const trainset=sets.find(x=>x.id===item.trainsetId),vehicle=trainset?.vehicles.find(v=>v.id===item.vehicleId);
-  async function savePatch(status:FindingStatus,historyNote:string,patch:Partial<Finding>={}){if(saving)return;setSaving(true);setError('');try{const next={...item,...patch,status,updatedAt:now(),history:[...item.history,{id:uid(),action:status,note:historyNote,createdAt:now()}]};await findingRepo.save(next);setItem(next);setNote('')}catch(e){setError(e instanceof Error?e.message:'Zmenu sa nepodarilo uložiť.')}finally{setSaving(false)}}
-  async function addAfter(files:FileList|null){try{const added=await toDataUrls(files);setAfter(p=>[...p,...added])}catch{setError('Fotografiu sa nepodarilo spracovať.')}}
-  async function deleteFinding(){if(saving)return;if(!window.confirm(`Naozaj odstrániť chybu ${item.number}? Táto operácia sa nedá vrátiť späť.`))return;setSaving(true);setError('');try{await findingRepo.remove(item.id);n('/findings',{replace:true})}catch(e){setError(e instanceof Error?e.message:'Chybu sa nepodarilo odstrániť.');setSaving(false)}}
-  return <Shell title={item.number}>{error&&<div className="error">{error}</div>}<div className="findingHeader"><div><span className={'priority '+item.priority}>{priorityLabel[item.priority]}</span><span className={'findingStatus '+item.status}>{statusLabel[item.status]}</span></div><div><b>{trainset?.name}</b> • {vehicle?.roleCode||'Celá jednotka'} • {item.location}</div>{item.labelNumber&&<div>Nálepka: <b>{item.labelNumber}</b></div>}</div><div className="findingColumns"><section><h2>Evidenčný list chyby</h2><p><b>Kategória:</b> {item.category}</p><p className="findingDescription">{item.description}</p><div className="findingPhotos">{item.beforePhotos.map((x,i)=><figure key={i}><img src={x}/></figure>)}</div></section><section><h2>Odstránenie</h2><textarea rows={4} value={repair} onChange={e=>setRepair(e.target.value)} placeholder="Popis vykonanej opravy" disabled={['verified','closed'].includes(item.status)}/><label className="upload">Pridať fotografie po oprave<input hidden type="file" accept="image/*" capture="environment" multiple disabled={['verified','closed'].includes(item.status)} onChange={e=>addAfter(e.target.files)}/></label><div className="findingPhotos">{after.map((x,i)=><figure key={i}><img src={x}/>{!['verified','closed'].includes(item.status)&&<button type="button" className="danger" onClick={()=>setAfter(after.filter((_,j)=>j!==i))}>Odstrániť</button>}</figure>)}</div></section></div><section className="findingActions"><textarea rows={2} value={note} onChange={e=>setNote(e.target.value)} placeholder="Poznámka k zmene stavu"/>{item.status==='new'&&<button type="button" disabled={saving} onClick={()=>savePatch('assigned',note||'Chyba pridelená na odstránenie')}>Prideliť</button>}{['new','assigned','rejected'].includes(item.status)&&<button type="button" disabled={saving} onClick={()=>{if(!repair.trim())return setError('Doplňte popis vykonanej opravy.');savePatch('fixed',note||'Označené ako odstránené',{repairDescription:repair,afterPhotos:after})}}>Označiť ako odstránené</button>}{item.status==='fixed'&&<><button type="button" disabled={saving} className="danger" onClick={()=>savePatch('rejected',note||'Oprava vrátená na dopracovanie')}>Vrátiť na opravu</button><button type="button" disabled={saving} onClick={()=>savePatch('verified',note||'Odstránenie overené kontrolórom')}>Potvrdiť odstránenie</button></>}{item.status==='verified'&&<button type="button" disabled={saving} onClick={()=>savePatch('closed',note||'Evidenčný list chyby uzatvorený')}>Uzatvoriť</button>}<button type="button" className="secondary" onClick={()=>n('/findings')}>Späť na zoznam</button><button type="button" className="danger" disabled={saving} onClick={deleteFinding}>Odstrániť chybu</button></section><section className="history"><h2>História</h2>{[...item.history].reverse().map(x=><div key={x.id}><b>{x.action==='created'?'Vytvorené':statusLabel[x.action as FindingStatus]}</b><span>{new Date(x.createdAt).toLocaleString('sk-SK')}</span><p>{x.note}</p></div>)}</section></Shell>
+  if (state.loading)
+    return (
+      <Shell title="Načítavam">
+        <Notice>Načítavam evidenčný list chyby…</Notice>
+      </Shell>
+    );
+  if (state.error)
+    return (
+      <Shell title="Evidencia chýb">
+        <ErrorBox message={state.error} />
+      </Shell>
+    );
+  const item = state.item;
+  if (!item)
+    return (
+      <Shell title="Evidencia chýb">
+        <NotFound what="Evidenčný list chyby" back="/findings" backLabel="Späť na zoznam" />
+      </Shell>
+    );
+
+  const trainset = (sets.data || []).find((x) => x.id === item.trainsetId);
+  const vehicle = trainset?.vehicles.find((v) => v.id === item.vehicleId);
+  const repairEditable = ['new', 'assigned', 'rejected'].includes(item.status);
+  const lastFixer = [...item.history].reverse().find((h) => h.action === 'fixed')?.user;
+
+  const changeStatus = (status: FindingStatus, defaultNote: string, check?: (user: string) => void) =>
+    action.run(async () => {
+      const user = requireWorker();
+      check?.(user);
+      await findingRepo.changeStatus(item, status, note.trim() || defaultNote, user);
+      setNote('');
+    });
+
+  const deleteFinding = () =>
+    action.run(async () => {
+      const closedNote = isDone(item.status) ? ' Chyba je už overená/uzatvorená.' : '';
+      if (!window.confirm(`Naozaj odstrániť chybu ${item.number} vrátane fotografií?${closedNote} Táto operácia sa nedá vrátiť späť.`)) return;
+      await findingRepo.remove(item);
+      n('/findings', { replace: true });
+    });
+
+  return (
+    <Shell title={item.number}>
+      <ErrorBox message={action.error} onClose={() => action.setError('')} />
+      <div className="findingHeader">
+        <div>
+          <span className={`priority ${item.priority}`}>{priorityLabel[item.priority]}</span>
+          <span className={`findingStatus ${item.status}`}>{statusLabel[item.status]}</span>
+        </div>
+        <div>
+          <b>{trainset?.name || (sets.loading ? '…' : 'Neznáma súprava')}</b> • {vehicle?.roleCode || 'Celá jednotka'} • {item.location}
+        </div>
+        {item.labelNumber && (
+          <div>
+            Nálepka: <b>{item.labelNumber}</b>
+          </div>
+        )}
+      </div>
+      <div className="findingColumns">
+        <section>
+          <h2>Evidenčný list chyby</h2>
+          <p>
+            <b>Kategória:</b> {item.category}
+          </p>
+          {item.createdBy && (
+            <p>
+              <b>Zaevidoval:</b> {item.createdBy}
+            </p>
+          )}
+          <p className="findingDescription">{item.description}</p>
+          {!isDone(item.status) && (
+            <PhotoButton
+              label="Pridať fotografie pred opravou"
+              onPhotos={(b) => findingRepo.addPhotos(item, 'beforePhotos', b)}
+              onError={(m) => action.setError(m)}
+            />
+          )}
+          <PhotoStrip
+            large
+            photos={item.beforePhotos}
+            queued={queued.beforePhotos}
+            onOpen={setLight}
+            disabled={isDone(item.status)}
+            onRemove={(url) => void action.run(() => findingRepo.removePhoto(item, 'beforePhotos', url))}
+          />
+        </section>
+        <section>
+          <h2>Odstránenie</h2>
+          <DebouncedText
+            multiline
+            rows={4}
+            ariaLabel="Popis vykonanej opravy"
+            placeholder="Popis vykonanej opravy"
+            value={item.repairDescription}
+            disabled={!repairEditable}
+            onCommit={(v) => {
+              repairRef.current = v;
+              findingRepo.saveRepairDescription(item, v).catch((e) => action.setError(errorMessage(e)));
+            }}
+          />
+          {repairEditable && (
+            <PhotoButton label="Pridať fotografie po oprave" onPhotos={(b) => findingRepo.addPhotos(item, 'afterPhotos', b)} onError={(m) => action.setError(m)} />
+          )}
+          <PhotoStrip
+            large
+            photos={item.afterPhotos}
+            queued={queued.afterPhotos}
+            onOpen={setLight}
+            disabled={!repairEditable}
+            onRemove={(url) => void action.run(() => findingRepo.removePhoto(item, 'afterPhotos', url))}
+          />
+        </section>
+      </div>
+      <section className="findingActions">
+        <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Poznámka k zmene stavu" aria-label="Poznámka k zmene stavu" />
+        {item.status === 'new' && (
+          <button type="button" disabled={action.busy} onClick={() => changeStatus('assigned', 'Chyba pridelená na odstránenie')}>
+            Prideliť
+          </button>
+        )}
+        {repairEditable && (
+          <button
+            type="button"
+            disabled={action.busy}
+            onClick={() =>
+              changeStatus('fixed', 'Označené ako odstránené', () => {
+                if (!(repairRef.current ?? item.repairDescription).trim()) throw new Error('Doplňte popis vykonanej opravy.');
+                if ((queued.afterPhotos || []).some((x) => x.state !== 'failed'))
+                  throw new Error('Fotografie po oprave sa ešte nahrávajú. Počkajte na ich nahranie.');
+              })
+            }
+          >
+            Označiť ako odstránené
+          </button>
+        )}
+        {item.status === 'fixed' && (
+          <>
+            <button type="button" disabled={action.busy} className="danger" onClick={() => changeStatus('rejected', 'Oprava vrátená na dopracovanie')}>
+              Vrátiť na opravu
+            </button>
+            <button
+              type="button"
+              disabled={action.busy}
+              onClick={() =>
+                changeStatus('verified', 'Odstránenie overené kontrolórom', (user) => {
+                  if (lastFixer && lastFixer.trim().toLowerCase() === user.trim().toLowerCase())
+                    throw new Error(`Odstránenie nemôže overiť ten istý pracovník, ktorý ho vykonal (${lastFixer}).`);
+                })
+              }
+            >
+              Potvrdiť odstránenie
+            </button>
+          </>
+        )}
+        {item.status === 'verified' && (
+          <button type="button" disabled={action.busy} onClick={() => changeStatus('closed', 'Evidenčný list chyby uzatvorený')}>
+            Uzatvoriť
+          </button>
+        )}
+        <button type="button" className="secondary" onClick={() => n('/findings')}>
+          Späť na zoznam
+        </button>
+        <button type="button" className="danger" disabled={action.busy} onClick={deleteFinding}>
+          Odstrániť chybu
+        </button>
+      </section>
+      <section className="history">
+        <h2>História</h2>
+        {[...item.history].reverse().map((x) => (
+          <div key={x.id}>
+            <b>{x.action === 'created' ? 'Vytvorené' : statusLabel[x.action as FindingStatus]}</b>
+            <span>
+              {new Date(x.createdAt).toLocaleString('sk-SK')}
+              {x.user ? ` • ${x.user}` : ''}
+            </span>
+            <p>{x.note}</p>
+          </div>
+        ))}
+      </section>
+      {light && <Lightbox src={light} close={() => setLight(undefined)} />}
+    </Shell>
+  );
 }
