@@ -451,7 +451,8 @@ export const trainsetRepo = {
   /** Uloží len základné údaje zákazky – prehľad protokolov sa neprepisuje. */
   async updateMeta(id: string, meta: TrainsetMeta) {
     const d = await ready();
-    const patch: Record<string, unknown> = { updatedAt: now() };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- typ UpdateData z Firestore neprijíma unknown
+    const patch: Record<string, any> = { updatedAt: now() };
     for (const k of META_KEYS) patch[k] = meta[k];
     await write(updateDoc(trainsetRef(d, id), stripUndefined(patch)));
   },
@@ -590,7 +591,8 @@ export const findingRepo = {
     const d = await ready();
     const stamp = now();
     const entry: FindingHistoryEntry = stripUndefined({ id: uid(), action: status, note, createdAt: stamp, user });
-    const patch: Record<string, unknown> = { status, updatedAt: stamp, history: arrayUnion(entry) };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- typ UpdateData z Firestore neprijíma unknown
+    const patch: Record<string, any> = { status, updatedAt: stamp, history: arrayUnion(entry) };
     if (extra.repairDescription !== undefined) patch.repairDescription = extra.repairDescription;
     await write(updateDoc(findingRef(d, item.id), patch));
   },
